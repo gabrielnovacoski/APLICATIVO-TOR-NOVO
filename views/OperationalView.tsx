@@ -300,12 +300,49 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
     setIsSyncing(false);
   };
 
-  const calculateOilLife = (v: Vehicle) => {
-    const baseInterval = v.oilInterval || 10000;
-    const nextChange = v.lastOilChangeOdometer + baseInterval;
+  const getVehicleOilStats = (v: Vehicle) => {
+    let interval = Number(v.oilInterval) || 10000;
+    if (interval <= 0) interval = 10000;
+
+    let lastChange = Number(v.lastOilChangeOdometer) || 0;
+    let nextChange = lastChange + interval;
+
+    // Se o odômetro já passou de 10.000 e lastChange é 0 (ou se o usuário preencheu 20.000 como marco final)
+    if (lastChange === 0 && v.odometer > 0) {
+      if (interval > 10000 && interval % 10000 === 0) {
+        nextChange = interval;
+        interval = 10000;
+        lastChange = nextChange - interval;
+      } else {
+        const cycle = Math.floor(v.odometer / interval);
+        lastChange = cycle * interval;
+        nextChange = (cycle + 1) * interval;
+      }
+    } else if (nextChange <= v.odometer) {
+      const cycle = Math.floor(v.odometer / interval);
+      lastChange = cycle * interval;
+      nextChange = (cycle + 1) * interval;
+    }
+
     const remainingKm = nextChange - v.odometer;
-    const life = (remainingKm / baseInterval) * 100;
-    return Math.max(0, Math.min(100, Math.round(life)));
+    const isUrgent = remainingKm <= 0;
+    const lifePercentage = isUrgent
+      ? 0
+      : Math.max(0, Math.min(100, Math.round((remainingKm / interval) * 100)));
+
+    return {
+      interval,
+      lastChange,
+      nextChange,
+      remainingKm: Math.max(0, remainingKm),
+      overdueKm: remainingKm < 0 ? Math.abs(remainingKm) : 0,
+      isUrgent,
+      lifePercentage
+    };
+  };
+
+  const calculateOilLife = (v: Vehicle) => {
+    return getVehicleOilStats(v).lifePercentage;
   };
 
   // Funções de Gestão de Equipes
@@ -395,14 +432,15 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
 
   // Funções de Gestão de Viaturas
   const handleOpenEditVehicle = (v: Vehicle) => {
+    const stats = getVehicleOilStats(v);
     setEditingVehicleId(v.id);
     setVehicleFormId(v.id);
     setVehicleFormModel(v.model);
     setVehicleFormYear(v.year);
     setVehicleFormPlate(v.plate);
     setVehicleFormOdometer(v.odometer);
-    setVehicleFormLastOil(v.lastOilChangeOdometer);
-    setVehicleFormInterval(v.oilInterval || 10000);
+    setVehicleFormLastOil(v.lastOilChangeOdometer > 0 ? v.lastOilChangeOdometer : stats.lastChange);
+    setVehicleFormInterval(stats.interval);
     setVehicleFormStatus(v.status);
     setIsVehicleModalOpen(true);
   };
@@ -410,8 +448,8 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
   const handleOpenAddVehicle = () => {
     setEditingVehicleId(null);
     setVehicleFormId(`TOR ${String(vehicles.length + 1).padStart(4, '0')}`);
-    setVehicleFormModel('Toyota Hilux SW4');
-    setVehicleFormYear('2024');
+    setVehicleFormModel('CHEV/TRAILBLAZER');
+    setVehicleFormYear('2026');
     setVehicleFormPlate('');
     setVehicleFormOdometer(10000);
     setVehicleFormLastOil(10000);
@@ -662,9 +700,7 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
 
         <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-12">
           {vehicles.map((vehicle, index) => {
-            const oilLife = calculateOilLife(vehicle);
-            const nextChange = vehicle.lastOilChangeOdometer + vehicle.oilInterval;
-            const isUrgent = vehicle.odometer >= nextChange;
+            const stats = getVehicleOilStats(vehicle);
 
             return (
               <div key={vehicle.id} className={`space-y-8 ${index % 2 !== 0 ? 'lg:border-l lg:border-slate-50 lg:pl-12' : ''}`}>
@@ -709,7 +745,7 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
                 <div className="grid grid-cols-2 gap-4">
                   {[
                     { label: 'Odômetro Atual', value: vehicle.odometer },
-                    { label: 'Próx. Troca Óleo', value: vehicle.lastOilChangeOdometer + vehicle.oilInterval },
+                    { label: 'Próx. Troca Óleo', value: stats.nextChange },
                   ].map(item => (
                     <div key={item.label} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                       <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest mb-1">{item.label}</p>
@@ -721,29 +757,29 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
                 <div className="space-y-3">
                   <div className="flex justify-between items-end px-1">
                     <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Vida Útil do Óleo</p>
-                    <p className={`text-xs font-black ${oilLife < 20 ? 'text-red-500' : 'text-tor-blue'}`}>
-                      {oilLife}%
+                    <p className={`text-xs font-black ${stats.lifePercentage < 20 ? 'text-red-500' : 'text-tor-blue'}`}>
+                      {stats.lifePercentage}%
                     </p>
                   </div>
                   <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
                     <div
-                      className={`h-full transition-all duration-1000 rounded-full ${oilLife < 20 ? 'bg-red-500' : 'bg-gradient-to-r from-tor-blue to-sky-400'}`}
-                      style={{ width: `${oilLife}%` }}
+                      className={`h-full transition-all duration-1000 rounded-full ${stats.lifePercentage < 20 ? 'bg-red-500' : 'bg-gradient-to-r from-tor-blue to-sky-400'}`}
+                      style={{ width: `${stats.lifePercentage}%` }}
                     ></div>
                   </div>
 
-                  {isUrgent ? (
+                  {stats.isUrgent ? (
                     <div className="flex flex-col items-center gap-1 pt-1">
                       <p className="text-[11px] font-black text-red-600 uppercase tracking-widest animate-flash-red">
                         ⚠️ TROCAR DE ÓLEO URGENTE ⚠️
                       </p>
                       <p className="text-[8px] text-red-500 font-bold uppercase tracking-tighter">
-                        Vencido por {(vehicle.odometer - (vehicle.lastOilChangeOdometer + vehicle.oilInterval)).toLocaleString('pt-BR')} km
+                        Vencido por {stats.overdueKm.toLocaleString('pt-BR')} km
                       </p>
                     </div>
                   ) : (
                     <p className="text-[8px] text-slate-400 font-bold uppercase text-center tracking-tighter">
-                      {Math.max(0, (vehicle.lastOilChangeOdometer + vehicle.oilInterval) - vehicle.odometer).toLocaleString('pt-BR')} km restantes para troca
+                      {stats.remainingKm.toLocaleString('pt-BR')} km restantes para troca
                     </p>
                   )}
                 </div>
