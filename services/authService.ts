@@ -3,6 +3,7 @@ export interface UserProfile {
   email: string;
   full_name: string | null;
   role: 'admin' | 'editor' | 'viewer';
+  avatar_url?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -32,11 +33,71 @@ export interface AuthResponse {
 }
 
 class AuthService {
-  private static readonly ADMIN_EMAIL = 'gabrielnovacoski@gmail.com';
-  // Use exact spelling matching the user's request. Wait, user provided: "gabrielnovacoski@gmai.com", but that's a typo in the user prompt (missing 'l' in gmail). 
-  // I will support both to be safe.
-  private static readonly ADMIN_EMAILS = ['gabrielnovacoski@gmail.com', 'gabrielnovacoski@gmai.com'];
+  public static readonly AUTHORIZED_GOOGLE_EMAIL = 'torpmrv@gmail.com';
+  private static readonly ADMIN_EMAILS = [
+    'torpmrv@gmail.com',
+    'gabrielnovacoski@gmail.com',
+    'gabrielnovacoski@gmai.com'
+  ];
   private static readonly ADMIN_PASS = 'Gn928635@';
+
+  /**
+   * Decodifica o token JWT emitido pelo Google Identity Services
+   */
+  public parseJwt(token: string): any {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        window.atob(base64)
+          .split('')
+          .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      return JSON.parse(jsonPayload);
+    } catch (e) {
+      console.error('Erro ao decodificar JWT do Google:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Realiza login a partir da credencial JWT fornecida pelo Google
+   */
+  async signInWithGoogleCredential(credential: string): Promise<AuthResponse> {
+    const payload = this.parseJwt(credential);
+    if (!payload || !payload.email) {
+      return { user: null, error: { message: 'Token de autenticação do Google inválido.' } };
+    }
+
+    const email = payload.email.toLowerCase();
+    if (email !== AuthService.AUTHORIZED_GOOGLE_EMAIL) {
+      return {
+        user: null,
+        error: {
+          message: `Acesso negado: a conta ${payload.email} não possui permissão de Gestor. O acesso é restrito à conta ${AuthService.AUTHORIZED_GOOGLE_EMAIL}.`
+        }
+      };
+    }
+
+    const user: User = {
+      id: 'admin',
+      email: payload.email
+    };
+
+    const sessionData = {
+      id: 'admin',
+      email: payload.email,
+      full_name: payload.name || 'Gestor TOR (CPMRv)',
+      avatar_url: payload.picture || null,
+      auth_provider: 'google',
+      created_at: new Date().toISOString()
+    };
+
+    localStorage.setItem('tor_session', JSON.stringify(sessionData));
+    this.notifyListeners(user);
+    return { user, error: null };
+  }
 
   async signUp(data: SignUpData): Promise<AuthResponse> {
     return { user: null, error: { message: 'Cadastro desabilitado.' } };
@@ -45,7 +106,11 @@ class AuthService {
   async signIn(email: string, password: string): Promise<AuthResponse> {
     const isEmailValid = AuthService.ADMIN_EMAILS.includes(email.toLowerCase());
     if (isEmailValid && password === AuthService.ADMIN_PASS) {
-      const user = { id: 'admin', email: 'gabrielnovacoski@gmail.com' };
+      const user = { 
+        id: 'admin', 
+        email: email.toLowerCase(),
+        full_name: 'Gestor TOR (CPMRv)'
+      };
       localStorage.setItem('tor_session', JSON.stringify(user));
       this.notifyListeners(user);
       return { user, error: null };
@@ -79,10 +144,25 @@ class AuthService {
 
   async getUserProfile(userId: string): Promise<UserProfile | null> {
     if (userId === 'admin') {
+      let email = AuthService.AUTHORIZED_GOOGLE_EMAIL;
+      let fullName = 'Administrador (TOR CPMRv)';
+      let avatarUrl: string | undefined = undefined;
+
+      const sessionStr = localStorage.getItem('tor_session');
+      if (sessionStr) {
+        try {
+          const session = JSON.parse(sessionStr);
+          if (session.email) email = session.email;
+          if (session.full_name) fullName = session.full_name;
+          if (session.avatar_url) avatarUrl = session.avatar_url;
+        } catch (e) {}
+      }
+
       return {
         id: 'admin',
-        email: 'gabrielnovacoski@gmail.com',
-        full_name: 'Administrador (Gabriel)',
+        email,
+        full_name: fullName,
+        avatar_url: avatarUrl,
         role: 'admin',
         is_active: true,
         created_at: new Date().toISOString(),

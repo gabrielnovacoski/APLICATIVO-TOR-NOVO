@@ -37,6 +37,7 @@ export interface UserProfile {
   email: string;
   full_name: string | null;
   role: 'admin' | 'editor' | 'viewer';
+  avatar_url?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;

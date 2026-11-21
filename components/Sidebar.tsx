@@ -1,11 +1,12 @@
 
 import React from 'react';
-import { ViewType } from '../types';
+import { ViewType, UserProfile } from '../types';
 
 interface SidebarProps {
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
   isLoggedIn: boolean;
+  userProfile?: UserProfile | null;
   onLoginToggle: () => void;
   mobileOpen: boolean;
   onMobileClose: () => void;
@@ -15,6 +16,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   activeView, 
   onViewChange, 
   isLoggedIn, 
+  userProfile,
   onLoginToggle,
   mobileOpen,
   onMobileClose 
@@ -125,15 +127,18 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div className={`size-10 rounded-full bg-slate-700 border overflow-hidden shrink-0 shadow-inner ${isLoggedIn ? 'border-emerald-500' : 'border-slate-500/50'}`}>
               <img
                 alt="Oficial"
-                src="https://picsum.photos/seed/police-officer-sc/100/100"
+                src={(isLoggedIn && userProfile?.avatar_url) ? userProfile.avatar_url : "https://picsum.photos/seed/police-officer-sc/100/100"}
                 className={`w-full h-full object-cover transition-all ${isLoggedIn ? '' : 'grayscale-[0.5]'}`}
+                referrerPolicy="no-referrer"
               />
             </div>
             <div className="min-w-0 flex-1 text-left">
-              <p className="text-sm font-bold truncate leading-tight">Gestor</p>
+              <p className="text-sm font-bold truncate leading-tight">
+                {(isLoggedIn && userProfile?.full_name) ? userProfile.full_name : 'Gestor'}
+              </p>
 
-              <p className={`text-[9px] uppercase font-black tracking-tighter opacity-70 ${isLoggedIn ? 'text-emerald-500' : 'text-slate-400'}`}>
-                {isLoggedIn ? 'ADMINISTRADOR ON' : 'CPMRv - SC'}
+              <p className={`text-[9px] uppercase font-black tracking-tighter truncate opacity-70 ${isLoggedIn ? 'text-emerald-500' : 'text-slate-400'}`}>
+                {isLoggedIn ? (userProfile?.email || 'ADMINISTRADOR ON') : 'CPMRv - SC'}
               </p>
             </div>
             <span className={`material-symbols-outlined text-lg ${isLoggedIn ? 'text-emerald-500' : 'text-slate-500'}`}>
