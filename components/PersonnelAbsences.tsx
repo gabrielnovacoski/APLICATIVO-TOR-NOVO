@@ -9,7 +9,6 @@ interface PersonnelAbsencesProps {
 const parseDateString = (dateStr: string) => {
     if (!dateStr) return new Date();
     const trimmed = dateStr.trim();
-    // Se estiver no formato DD/MM/YYYY
     if (trimmed.includes('/')) {
         const parts = trimmed.split('/');
         if (parts.length === 3) {
@@ -17,7 +16,6 @@ const parseDateString = (dateStr: string) => {
             return new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T12:00:00`);
         }
     }
-    // Se estiver no formato YYYY-MM-DD ou DD-MM-YYYY
     if (trimmed.includes('-')) {
         const parts = trimmed.split('-');
         if (parts.length === 3) {
@@ -33,16 +31,42 @@ const parseDateString = (dateStr: string) => {
 
 const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => {
     const [absences, setAbsences] = useState<PersonnelAbsence[]>([]);
+    const [personnelList, setPersonnelList] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Modal de adição / edição de afastamento
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingAbsenceId, setEditingAbsenceId] = useState<string | null>(null);
+    const [formPersonnelName, setFormPersonnelName] = useState('');
+    const [formGraduation, setFormGraduation] = useState('');
+    const [formType, setFormType] = useState('Férias');
+    const [formStartDate, setFormStartDate] = useState('');
+    const [formEndDate, setFormEndDate] = useState('');
+    const [formDescription, setFormDescription] = useState('');
 
     const fetchData = async () => {
         setLoading(true);
 
-        // Fetch personnel and absences
         const pData = await fetchPersonnel();
+        setPersonnelList(pData);
+
+        // Verificar se há dados personalizados salvos no localStorage
+        const savedCustom = localStorage.getItem('tor_custom_absences');
+        if (savedCustom) {
+            try {
+                const parsed = JSON.parse(savedCustom);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setAbsences(parsed);
+                    setLoading(false);
+                    return;
+                }
+            } catch (e) {
+                console.error('Erro ao ler tor_custom_absences do localStorage:', e);
+            }
+        }
+
         const aData = await fetchPersonnelAbsences();
 
-        // Join personnel data into absences
         const joinedAbsences = aData.map(absence => {
             const person = pData.find(p => p.id === absence.personnel_id);
             return {
@@ -50,11 +74,10 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                 personnel: person ? {
                     name: person.name,
                     graduation: person.graduation
-                } : { name: 'Desconhecido', graduation: '' }
+                } : { name: absence.personnel?.name || 'Policial', graduation: absence.personnel?.graduation || '' }
             };
         });
 
-        // Sort by start_date ascending using robust parser
         joinedAbsences.sort((a, b) => parseDateString(a.start_date).getTime() - parseDateString(b.start_date).getTime());
 
         setAbsences(joinedAbsences);
@@ -65,10 +88,109 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
         fetchData();
     }, []);
 
+    const saveAbsencesToStorage = (updated: PersonnelAbsence[]) => {
+        setAbsences(updated);
+        localStorage.setItem('tor_custom_absences', JSON.stringify(updated));
+    };
+
+    const handleOpenAddModal = () => {
+        setEditingAbsenceId(null);
+        setFormPersonnelName(personnelList[0]?.name || '');
+        setFormGraduation(personnelList[0]?.graduation || '');
+        setFormType('Férias');
+        const todayStr = new Date().toISOString().split('T')[0];
+        setFormStartDate(todayStr);
+        setFormEndDate(todayStr);
+        setFormDescription('');
+        setIsModalOpen(true);
+    };
+
+    const handleOpenEditModal = (absence: PersonnelAbsence) => {
+        setEditingAbsenceId(absence.id);
+        setFormPersonnelName(absence.personnel?.name || '');
+        setFormGraduation(absence.personnel?.graduation || '');
+        setFormType(absence.type || 'Férias');
+        
+        // Formatar datas para YYYY-MM-DD para o input type="date"
+        const formatInputDate = (dStr: string) => {
+            if (!dStr) return '';
+            const d = parseDateString(dStr);
+            return d.toISOString().split('T')[0];
+        };
+
+        setFormStartDate(formatInputDate(absence.start_date));
+        setFormEndDate(formatInputDate(absence.end_date));
+        setFormDescription(absence.description || '');
+        setIsModalOpen(true);
+    };
+
+    const handleSaveAbsence = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formPersonnelName.trim()) {
+            alert('Por favor, informe o policial.');
+            return;
+        }
+
+        let updated: PersonnelAbsence[];
+
+        if (editingAbsenceId) {
+            // Editando existente
+            updated = absences.map(a => {
+                if (a.id === editingAbsenceId) {
+                    return {
+                        ...a,
+                        type: formType,
+                        start_date: formStartDate,
+                        end_date: formEndDate,
+                        description: formDescription,
+                        personnel: {
+                            name: formPersonnelName,
+                            graduation: formGraduation
+                        }
+                    };
+                }
+                return a;
+            });
+        } else {
+            // Novo
+            const newAbsence: PersonnelAbsence = {
+                id: `custom-absence-${Date.now()}`,
+                personnel_id: `custom-p-${Date.now()}`,
+                type: formType,
+                start_date: formStartDate,
+                end_date: formEndDate,
+                description: formDescription,
+                personnel: {
+                    name: formPersonnelName,
+                    graduation: formGraduation
+                }
+            };
+            updated = [newAbsence, ...absences];
+        }
+
+        updated.sort((a, b) => parseDateString(a.start_date).getTime() - parseDateString(b.start_date).getTime());
+        saveAbsencesToStorage(updated);
+        setIsModalOpen(false);
+    };
+
+    const handleDeleteAbsence = (id: string) => {
+        if (confirm('Tem certeza que deseja remover este registro de afastamento?')) {
+            const updated = absences.filter(a => a.id !== id);
+            saveAbsencesToStorage(updated);
+        }
+    };
+
+    const handleResetAbsences = () => {
+        if (confirm('Deseja recarregar a lista original de afastamentos da planilha?')) {
+            localStorage.removeItem('tor_custom_absences');
+            fetchData();
+        }
+    };
+
     const formatDate = (dateStr: string) => {
         if (!dateStr) return '';
         const trimmed = dateStr.trim();
-        if (trimmed.includes('/')) return trimmed; // Já está formatado como DD/MM/YYYY
+        if (trimmed.includes('/')) return trimmed;
         const parts = trimmed.split('-');
         if (parts.length !== 3) return trimmed;
         const [year, month, day] = parts;
@@ -117,9 +239,9 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
 
     return (
         <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden mb-8">
-            <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+            <div className="px-8 py-6 border-b border-slate-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50/50">
                 <div className="flex items-center gap-4">
-                    <div className="size-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center">
+                    <div className="size-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shadow-inner">
                         <span className="material-symbols-outlined text-2xl filled-icon">event_busy</span>
                     </div>
                     <div className="flex flex-col">
@@ -127,6 +249,28 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                         <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Controle de efetivo fora de serviço</p>
                     </div>
                 </div>
+
+                {isLoggedIn && (
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={handleResetAbsences}
+                            className="text-slate-400 hover:text-slate-600 px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1"
+                            title="Recarregar dados originais da planilha"
+                        >
+                            <span className="material-symbols-outlined text-sm">restart_alt</span>
+                            <span>Restaurar</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleOpenAddModal}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                        >
+                            <span className="material-symbols-outlined text-sm">add_circle</span>
+                            <span>+ Novo Afastamento</span>
+                        </button>
+                    </div>
+                )}
             </div>
 
             <div className="p-3 md:p-6">
@@ -162,6 +306,7 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                         </div>
                     </div>
                 </div>
+
                 {absences.length === 0 ? (
                     <div className="text-center py-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
                         <span className="material-symbols-outlined text-2xl text-slate-300 mb-1">person_off</span>
@@ -176,37 +321,28 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                             const upcoming = status === 'UPCOMING';
                             const completed = status === 'COMPLETED';
 
-                            let statusColor = 'emerald-500';
-                            let statusBg = 'bg-emerald-500';
-                            let statusBorder = 'border-emerald-500/30';
-                            let statusText = 'text-emerald-600';
+                            let statusBorder = 'border-slate-200';
+                            let statusText = 'text-slate-500';
                             let statusBadge = '';
                             let badgeText = '';
 
                             if (active) {
-                                statusColor = absence.type === 'Férias' ? 'orange-500' : 'red-500';
-                                statusBg = absence.type === 'Férias' ? 'bg-orange-500' : 'bg-red-500';
                                 statusBorder = absence.type === 'Férias' ? 'border-orange-500' : 'border-red-500';
                                 statusText = absence.type === 'Férias' ? 'text-orange-600' : 'text-red-600';
-                                statusBadge = statusBg;
+                                statusBadge = absence.type === 'Férias' ? 'bg-orange-500' : 'bg-red-500';
                                 badgeText = 'EM VIGOR';
                             } else if (upcoming) {
-                                statusColor = 'blue-500';
-                                statusBg = 'bg-blue-500';
                                 statusBorder = 'border-blue-500/30';
                                 statusText = 'text-blue-600';
                                 statusBadge = 'bg-blue-500';
                                 badgeText = 'AGENDADO';
                             } else if (completed) {
-                                statusColor = 'slate-400';
-                                statusBg = 'bg-slate-400';
                                 statusBorder = 'border-slate-200';
                                 statusText = 'text-slate-500';
                                 statusBadge = 'bg-slate-500';
                                 badgeText = 'CONCLUÍDO';
                             }
 
-                            // Cálculo de dias restantes / início
                             let daysLabel = '';
                             if (active || upcoming) {
                                 const startClean = parseDateString(absence.start_date);
@@ -238,41 +374,62 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                             }
 
                             return (
-                                <div key={absence.id} className={`group relative bg-white border ${statusBorder} ${active ? 'ring-2 ring-' + statusColor + '/10 shadow-lg' : completed ? 'bg-slate-50/50' : 'bg-blue-50/10'} rounded-xl p-3 md:p-4 hover:shadow-md transition-all flex flex-col justify-between min-h-[135px]`}>
+                                <div key={absence.id} className={`group relative bg-white border ${statusBorder} ${active ? 'shadow-lg' : completed ? 'bg-slate-50/50' : 'bg-blue-50/10'} rounded-2xl p-4 hover:shadow-md transition-all flex flex-col justify-between min-h-[145px]`}>
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                                            <div className={`size-9 md:size-10 rounded-lg ${active ? statusBg + ' text-white' : config.bgColor + ' ' + config.color} flex items-center justify-center shrink-0 shadow-sm`}>
-                                                <span className="material-symbols-outlined text-lg md:text-xl filled-icon">{config.icon}</span>
+                                            <div className={`size-10 rounded-xl ${active ? (absence.type === 'Férias' ? 'bg-orange-500' : 'bg-red-500') + ' text-white' : config.bgColor + ' ' + config.color} flex items-center justify-center shrink-0 shadow-sm`}>
+                                                <span className="material-symbols-outlined text-xl filled-icon">{config.icon}</span>
                                             </div>
-                                            <div className="flex flex-col min-w-0">
+                                            <div className="flex flex-col min-w-0 flex-1">
                                                 <div className="flex items-center gap-1.5 mb-0.5">
-                                                    <span className={`text-[9px] md:text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${active ? statusText : upcoming ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${active ? statusText : upcoming ? 'text-blue-600' : 'text-slate-400'}`}>
                                                         {absence.type}
                                                     </span>
                                                     {statusBadge && (
-                                                        <span className={`${statusBadge} text-white text-[8px] md:text-[9px] font-black px-1.5 rounded-sm ${active ? 'animate-pulse' : ''} whitespace-nowrap`}>{badgeText}</span>
+                                                        <span className={`${statusBadge} text-white text-[9px] font-black px-1.5 rounded ${active ? 'animate-pulse' : ''} whitespace-nowrap`}>{badgeText}</span>
                                                     )}
                                                 </div>
-                                                <h4 className="text-slate-900 font-black text-[13px] md:text-sm uppercase leading-tight">
-                                                    {absence.personnel?.graduation} {absence.personnel?.name}
+                                                <h4 className="text-slate-900 font-black text-sm uppercase leading-tight truncate">
+                                                    {absence.personnel?.graduation ? `${absence.personnel.graduation} ` : ''}{absence.personnel?.name}
                                                 </h4>
                                             </div>
                                         </div>
+
+                                        {isLoggedIn && (
+                                            <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity ml-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenEditModal(absence)}
+                                                    className="size-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+                                                    title="Editar Afastamento"
+                                                >
+                                                    <span className="material-symbols-outlined text-xs">edit</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteAbsence(absence.id)}
+                                                    className="size-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors"
+                                                    title="Remover Afastamento"
+                                                >
+                                                    <span className="material-symbols-outlined text-xs">delete</span>
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
 
-                                    <div className="space-y-2.5">
-                                        <div className="flex items-center justify-between gap-2 bg-slate-50 rounded-lg p-2 border border-slate-100/50">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between gap-2 bg-slate-50 rounded-xl p-2.5 border border-slate-100">
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <span className="material-symbols-outlined text-slate-400 text-sm shrink-0">calendar_month</span>
                                                 <div className="flex flex-col min-w-0">
                                                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter leading-none mb-0.5">Período</p>
-                                                    <p className="text-[11px] md:text-xs font-bold text-slate-700 leading-tight">
+                                                    <p className="text-xs font-bold text-slate-700 leading-tight">
                                                         {formatDate(absence.start_date)} — {formatDate(absence.end_date)}
                                                     </p>
                                                 </div>
                                             </div>
                                             {daysLabel && (
-                                                <span className={`text-[8px] md:text-[9px] font-black uppercase px-2 py-0.5 rounded-md shrink-0 shadow-sm ${
+                                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md shrink-0 shadow-sm ${
                                                     active 
                                                         ? (absence.type === 'Férias' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-red-50 text-red-600 border border-red-100') 
                                                         : 'bg-blue-50 text-blue-600 border border-blue-100'
@@ -283,7 +440,7 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                                         </div>
 
                                         {absence.description && (
-                                            <p className="text-[10px] md:text-xs text-slate-500 italic px-1" title={absence.description}>"{absence.description}"</p>
+                                            <p className="text-xs text-slate-500 italic px-1 truncate" title={absence.description}>"{absence.description}"</p>
                                         )}
                                     </div>
                                 </div>
@@ -292,6 +449,121 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                     </div>
                 )}
             </div>
+
+            {/* Modal de Adição / Edição de Afastamento */}
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-white/20 animate-in zoom-in-95 duration-200">
+                        <div className="bg-tor-dark p-6 text-white text-center relative">
+                            <h3 className="text-lg font-black uppercase tracking-wider">
+                                {editingAbsenceId ? 'Editar Afastamento' : 'Novo Afastamento / Licença'}
+                            </h3>
+                            <p className="text-slate-400 text-xs mt-1">Controle de Efetivo do TOR</p>
+                        </div>
+
+                        <form onSubmit={handleSaveAbsence} className="p-6 space-y-4">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Policial Militar</label>
+                                {personnelList.length > 0 ? (
+                                    <select
+                                        value={formPersonnelName}
+                                        onChange={e => {
+                                            const selected = personnelList.find(p => p.name === e.target.value);
+                                            setFormPersonnelName(e.target.value);
+                                            if (selected) setFormGraduation(selected.graduation || '');
+                                        }}
+                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-tor-blue focus:ring-0"
+                                        required
+                                    >
+                                        <option value="">Selecione o policial...</option>
+                                        {personnelList.map(p => (
+                                            <option key={p.id} value={p.name}>
+                                                {p.graduation} {p.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        type="text"
+                                        value={formPersonnelName}
+                                        onChange={e => setFormPersonnelName(e.target.value)}
+                                        placeholder="Nome do Policial"
+                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-tor-blue focus:ring-0"
+                                        required
+                                    />
+                                )}
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Afastamento</label>
+                                <select
+                                    value={formType}
+                                    onChange={e => setFormType(e.target.value)}
+                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-tor-blue focus:ring-0"
+                                >
+                                    <option value="Férias">Férias</option>
+                                    <option value="Atestado Médico">Atestado Médico</option>
+                                    <option value="Licença Especial">Licença Especial</option>
+                                    <option value="Licença Tratamento Saúde">Licença Tratamento Saúde</option>
+                                    <option value="Curso">Curso / Treinamento</option>
+                                    <option value="Dispensa">Dispensa Recompensa</option>
+                                    <option value="Outro">Outro</option>
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Data Início</label>
+                                    <input
+                                        type="date"
+                                        value={formStartDate}
+                                        onChange={e => setFormStartDate(e.target.value)}
+                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-tor-blue focus:ring-0"
+                                        required
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Data Fim</label>
+                                    <input
+                                        type="date"
+                                        value={formEndDate}
+                                        onChange={e => setFormEndDate(e.target.value)}
+                                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-tor-blue focus:ring-0"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Observações / Motivo (Opcional)</label>
+                                <input
+                                    type="text"
+                                    value={formDescription}
+                                    onChange={e => setFormDescription(e.target.value)}
+                                    placeholder="Ex: Portaria nº 123/2026"
+                                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:border-tor-blue focus:ring-0"
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-md shadow-emerald-600/20"
+                                >
+                                    Salvar Dados
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
