@@ -99,6 +99,29 @@ class AuthService {
     return { user, error: null };
   }
 
+  /**
+   * Realiza login direto de 1 clique como Gestor do TOR
+   */
+  async signInDirectAsManager(email: string = AuthService.AUTHORIZED_GOOGLE_EMAIL): Promise<AuthResponse> {
+    const user: User = {
+      id: 'admin',
+      email: email.toLowerCase()
+    };
+
+    const sessionData = {
+      id: 'admin',
+      email: email.toLowerCase(),
+      full_name: 'Gestor TOR (CPMRv)',
+      avatar_url: null,
+      auth_provider: 'direct',
+      created_at: new Date().toISOString()
+    };
+
+    localStorage.setItem('tor_session', JSON.stringify(sessionData));
+    this.notifyListeners(user);
+    return { user, error: null };
+  }
+
   async signUp(data: SignUpData): Promise<AuthResponse> {
     return { user: null, error: { message: 'Cadastro desabilitado.' } };
   }

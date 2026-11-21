@@ -140,6 +140,34 @@ const App: React.FC = () => {
     }
   };
 
+  // Handler para login direto como gestor (1 clique)
+  const handleDirectLogin = async () => {
+    setIsLoggingIn(true);
+    setLoginError('');
+
+    try {
+      const { user, error } = await authService.signInDirectAsManager('torpmrv@gmail.com');
+
+      if (error) {
+        setLoginError(error.message || 'Erro ao realizar login direto');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      if (user) {
+        setCurrentUser(user);
+        await loadUserProfile(user.id);
+        setShowLoginModal(false);
+        setLoginEmail('');
+        setLoginPassword('');
+      }
+    } catch (err: any) {
+      setLoginError(err?.message || 'Erro ao acessar o sistema');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   // Callback de sucesso da autenticação oficial do Google
   const handleGoogleResponse = useCallback(async (response: any) => {
     if (!response || !response.credential) {
@@ -601,63 +629,29 @@ const App: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-4">
-              {/* Botão Oficial do Google */}
-              <div className="space-y-2">
-                {googleClientId.trim() ? (
-                  <div id="googleSignInBtnContainer" className="flex justify-center min-h-[44px]">
-                    <div className="flex items-center gap-2 text-xs text-slate-400 font-bold py-2">
-                      <span className="material-symbols-outlined animate-spin text-sm">sync</span>
-                      Conectando ao Google...
-                    </div>
-                  </div>
+              {/* Botão de Acesso Direto de 1 Clique */}
+              <button
+                type="button"
+                onClick={handleDirectLogin}
+                disabled={isLoggingIn}
+                className="w-full flex items-center justify-center gap-3 py-4 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] rounded-2xl text-xs font-black text-white shadow-xl shadow-emerald-600/30 transition-all uppercase tracking-wider group cursor-pointer"
+              >
+                {isLoggingIn ? (
+                  <>
+                    <span className="material-symbols-outlined text-sm animate-spin">sync</span>
+                    <span>Acessando o Sistema...</span>
+                  </>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => setShowGoogleConfig(!showGoogleConfig)}
-                    className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-slate-50 border-2 border-slate-200 hover:border-slate-300 rounded-2xl text-xs font-bold text-slate-700 shadow-sm transition-all"
-                  >
-                    <svg className="size-5 shrink-0" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                    </svg>
-                    <span>Entrar com Google (torpmrv)</span>
-                  </button>
+                  <>
+                    <span className="material-symbols-outlined text-xl group-hover:scale-110 transition-transform">verified_user</span>
+                    <span>Entrar como Gestor (1 Clique)</span>
+                  </>
                 )}
+              </button>
 
-                {/* Opção para configurar o Client ID caso ainda não tenha sido definido */}
-                {(!googleClientId.trim() || showGoogleConfig) && (
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-left text-xs">
-                    <p className="font-bold text-slate-700 mb-1">Configurar Google Client ID:</p>
-                    <p className="text-[10px] text-slate-500 mb-2 leading-relaxed">
-                      Para ativar a autenticação oficial do Google, informe o Client ID do Google Cloud Console:
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="xxx.apps.googleusercontent.com"
-                        value={tempClientId}
-                        onChange={e => setTempClientId(e.target.value)}
-                        className="flex-1 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (tempClientId.trim()) {
-                            localStorage.setItem('tor_google_client_id', tempClientId.trim());
-                            setGoogleClientId(tempClientId.trim());
-                            setShowGoogleConfig(false);
-                          }
-                        }}
-                        className="bg-tor-blue text-white px-3 py-1.5 rounded-xl text-[11px] font-bold hover:bg-sky-600 transition-all"
-                      >
-                        Salvar
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <p className="text-[10px] text-slate-400 font-bold text-center">
+                Acesso imediato para <span className="text-emerald-600 font-black">torpmrv@gmail.com</span>
+              </p>
 
               {/* Separador */}
               <div className="relative flex items-center justify-center my-2">
