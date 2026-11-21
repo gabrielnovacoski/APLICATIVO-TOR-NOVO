@@ -727,7 +727,6 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      )}
 
       {showSetupModal && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
