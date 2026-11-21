@@ -36,10 +36,9 @@ class AuthService {
   public static readonly AUTHORIZED_GOOGLE_EMAIL = 'torpmrv@gmail.com';
   private static readonly ADMIN_EMAILS = [
     'torpmrv@gmail.com',
-    'gabrielnovacoski@gmail.com',
-    'gabrielnovacoski@gmai.com'
+    'gabrielnovacoski@gmail.com'
   ];
-  private static readonly ADMIN_PASS = 'Gn928635@';
+  private static readonly ADMIN_PASS = 'odin2018#';
 
   /**
    * Decodifica o token JWT emitido pelo Google Identity Services
@@ -127,18 +126,21 @@ class AuthService {
   }
 
   async signIn(email: string, password: string): Promise<AuthResponse> {
-    const isEmailValid = AuthService.ADMIN_EMAILS.includes(email.toLowerCase());
-    if (isEmailValid && password === AuthService.ADMIN_PASS) {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPass = (password || '').trim();
+
+    const isEmailValid = AuthService.ADMIN_EMAILS.includes(cleanEmail);
+    if (isEmailValid && cleanPass === AuthService.ADMIN_PASS) {
       const user = { 
         id: 'admin', 
-        email: email.toLowerCase(),
+        email: cleanEmail,
         full_name: 'Gestor TOR (CPMRv)'
       };
       localStorage.setItem('tor_session', JSON.stringify(user));
       this.notifyListeners(user);
       return { user, error: null };
     }
-    return { user: null, error: { message: 'Credenciais incorretas' } };
+    return { user: null, error: { message: 'E-mail ou senha incorretos' } };
   }
 
   async signOut(): Promise<{ error: AuthError | null }> {

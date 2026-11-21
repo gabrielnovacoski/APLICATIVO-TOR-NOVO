@@ -32,8 +32,9 @@ const App: React.FC = () => {
   const [tempClientId, setTempClientId] = useState('');
 
   // Estados do formulário de login
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState('torpmrv@gmail.com');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -248,6 +249,10 @@ const App: React.FC = () => {
 
   const handleToggleLogin = () => {
     if (!isLoggedIn) {
+      setLoginEmail('torpmrv@gmail.com');
+      setLoginPassword('');
+      setLoginError('');
+      setShowPassword(false);
       setShowLoginModal(true);
     } else {
       if (confirm('Deseja sair do sistema?')) {
@@ -621,79 +626,62 @@ const App: React.FC = () => {
               <div className="size-16 bg-tor-blue/20 rounded-3xl mx-auto mb-4 flex items-center justify-center border border-white/10 shadow-inner">
                 <span className="material-symbols-outlined text-3xl text-tor-blue filled-icon">lock</span>
               </div>
-              <h3 className="text-xl font-black mb-1 uppercase tracking-tight">Área do Comandante</h3>
+              <h3 className="text-xl font-black mb-1 uppercase tracking-tight">Área do Gestor</h3>
               <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest leading-relaxed">
-                Gestor autorizado:<br />
-                <span className="text-emerald-400 font-black">torpmrv@gmail.com</span>
+                Acesso Restrito ao Comando TOR
               </p>
             </div>
 
-            <div className="p-6 space-y-4">
-              {/* Botão de Acesso Direto de 1 Clique */}
-              <button
-                type="button"
-                onClick={handleDirectLogin}
-                disabled={isLoggingIn}
-                className="w-full flex items-center justify-center gap-3 py-4 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] rounded-2xl text-xs font-black text-white shadow-xl shadow-emerald-600/30 transition-all uppercase tracking-wider group cursor-pointer"
-              >
-                {isLoggingIn ? (
-                  <>
-                    <span className="material-symbols-outlined text-sm animate-spin">sync</span>
-                    <span>Acessando o Sistema...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-xl group-hover:scale-110 transition-transform">verified_user</span>
-                    <span>Entrar como Gestor (1 Clique)</span>
-                  </>
-                )}
-              </button>
-
-              <p className="text-[10px] text-slate-400 font-bold text-center">
-                Acesso imediato para <span className="text-emerald-600 font-black">torpmrv@gmail.com</span>
-              </p>
-
-              {/* Separador */}
-              <div className="relative flex items-center justify-center my-2">
-                <div className="border-t border-slate-200 w-full"></div>
-                <span className="bg-white px-2.5 text-[9px] font-black tracking-widest uppercase text-slate-400 absolute">
-                  OU ACESSO COM SENHA
-                </span>
-              </div>
-
+            <div className="p-6">
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="torpmrv@gmail.com"
-                    className={`w-full bg-slate-50 border-2 ${loginError ? 'border-red-500' : 'border-slate-100'} focus:border-tor-blue focus:ring-0 rounded-2xl px-4 py-3 text-xs font-bold transition-all`}
-                    value={loginEmail}
-                    onChange={e => setLoginEmail(e.target.value)}
-                    disabled={isLoggingIn}
-                  />
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">E-mail de Acesso</label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">mail</span>
+                    <input
+                      type="email"
+                      required
+                      placeholder="torpmrv@gmail.com"
+                      className={`w-full bg-slate-50 border-2 ${loginError ? 'border-red-500' : 'border-slate-100'} focus:border-tor-blue focus:ring-0 rounded-2xl pl-11 pr-4 py-3 text-xs font-bold text-slate-800 transition-all`}
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      disabled={isLoggingIn}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Senha</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    className={`w-full bg-slate-50 border-2 ${loginError ? 'border-red-500 animate-shake' : 'border-slate-100'} focus:border-tor-blue focus:ring-0 rounded-2xl px-4 py-3 text-xs font-bold transition-all`}
-                    value={loginPassword}
-                    onChange={e => setLoginPassword(e.target.value)}
-                    disabled={isLoggingIn}
-                  />
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Senha de Acesso</label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">key</span>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="••••••••"
+                      className={`w-full bg-slate-50 border-2 ${loginError ? 'border-red-500 animate-shake' : 'border-slate-100'} focus:border-tor-blue focus:ring-0 rounded-2xl pl-11 pr-11 py-3 text-xs font-bold text-slate-800 transition-all`}
+                      value={loginPassword}
+                      onChange={e => setLoginPassword(e.target.value)}
+                      disabled={isLoggingIn}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                      tabIndex={-1}
+                    >
+                      <span className="material-symbols-outlined text-lg">
+                        {showPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  </div>
                   {loginError && <p className="text-[10px] text-red-500 font-bold text-center mt-1 animate-bounce">{loginError}</p>}
                 </div>
 
-                <div className="flex flex-col gap-2 pt-1">
+                <div className="flex flex-col gap-2 pt-2">
                   <button
                     type="submit"
                     disabled={isLoggingIn}
-                    className={`w-full bg-tor-dark text-white py-3.5 rounded-2xl font-black uppercase tracking-widest text-xs ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'} transition-all shadow-xl shadow-tor-dark/20 flex items-center justify-center gap-2 group`}
+                    className={`w-full bg-tor-dark hover:bg-slate-800 text-white py-3.5 rounded-2xl font-black uppercase tracking-widest text-xs ${isLoggingIn ? 'opacity-50 cursor-not-allowed' : 'active:scale-[0.99]'} transition-all shadow-xl shadow-tor-dark/20 flex items-center justify-center gap-2 group cursor-pointer`}
                   >
                     {isLoggingIn ? (
                       <>
@@ -709,9 +697,9 @@ const App: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setShowLoginModal(false); setLoginEmail(''); setLoginPassword(''); setLoginError(''); }}
+                    onClick={() => { setShowLoginModal(false); setLoginPassword(''); setLoginError(''); }}
                     disabled={isLoggingIn}
-                    className="w-full text-slate-400 py-2.5 rounded-xl font-bold uppercase tracking-widest text-[10px] hover:text-slate-600 transition-all disabled:opacity-50"
+                    className="w-full text-slate-400 py-2 rounded-xl font-bold uppercase tracking-widest text-[10px] hover:text-slate-600 transition-all disabled:opacity-50 cursor-pointer"
                   >
                     Cancelar
                   </button>
