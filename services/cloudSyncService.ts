@@ -13,6 +13,7 @@ export interface SyncResult {
 
 class CloudSyncService {
   public static readonly STORAGE_URL_KEY = 'tor_apps_script_url';
+  public static readonly DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbx-CHy5sS33wyfCVx1jRWoh1qyFU5KcdyqD3bQdmgK0UhbGTxVRlW64RS-3Il-Ujmjm-w/exec';
 
   /**
    * Obtém a URL do Webhook do Google Apps Script
@@ -20,7 +21,7 @@ class CloudSyncService {
   public getSyncUrl(): string {
     const envUrl = (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL;
     const localUrl = localStorage.getItem(CloudSyncService.STORAGE_URL_KEY);
-    return (envUrl || localUrl || '').trim();
+    return (localUrl || envUrl || CloudSyncService.DEFAULT_URL).trim();
   }
 
   /**
