@@ -1,35 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchLatestVehicleKm, fetchPersonnelAbsences, fetchPersonnel, fetchSpreadsheetVehicles, fetchSpreadsheetTeams } from '../services/sheetsService';
 import PersonnelAbsences from '../components/PersonnelAbsences';
-import { PersonnelAbsence as Leave } from '../types';
-
-interface Member {
-  name: string;
-  role: string;
-  icon: string;
-}
-
-interface Team {
-  id: string;
-  name: string;
-  sector: string;
-  status: string;
-  color: string;
-  members: Member[];
-}
-
-interface Vehicle {
-  id: string;
-  prefix: string;
-  status: 'OPERANDO' | 'BAIXADA';
-  model: string;
-  year: string;
-  plate: string;
-  odometer: number;
-  oilInterval: number;
-  lastOilChangeOdometer: number;
-  color: string;
-}
+import { PersonnelAbsence as Leave, Team, Vehicle, Member } from '../types';
+import { cloudSyncService } from '../services/cloudSyncService';
 
 const initialTeams: Team[] = [
   {
@@ -124,6 +97,18 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
   const [vehicleFormInterval, setVehicleFormInterval] = useState(10000);
   const [vehicleFormStatus, setVehicleFormStatus] = useState<'OPERANDO' | 'BAIXADA'>('OPERANDO');
 
+  // Estados de Salvamento e Notificações (Feedback ao Gestor)
+  const [isSavingTeam, setIsSavingTeam] = useState(false);
+  const [isSavingVehicle, setIsSavingVehicle] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => {
+      setToastMessage(prev => prev && prev.text === text ? null : prev);
+    }, 4500);
+  };
+
   // Ref para sincronização automática segura
   const vehiclesRef = useRef<Vehicle[]>([]);
   useEffect(() => {
@@ -180,38 +165,51 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
     
     setActiveLeaves(activeAData);
 
-    // Verificar se há viaturas customizadas salvas no localStorage
-    const savedVehicles = localStorage.getItem('tor_custom_vehicles');
-    if (savedVehicles) {
-      try {
-        const parsedV = JSON.parse(savedVehicles);
-        if (Array.isArray(parsedV) && parsedV.length > 0) {
-          setVehicles(parsedV);
-        } else {
+    // Tentar carregar dados instantâneos da nuvem (Google Apps Script)
+    const cloudData = await cloudSyncService.fetchCloudData();
+
+    // 1. Viaturas: Nuvem -> LocalStorage -> Planilha CSV
+    if (cloudData?.vehicles && cloudData.vehicles.length > 0) {
+      setVehicles(cloudData.vehicles);
+      localStorage.setItem('tor_custom_vehicles', JSON.stringify(cloudData.vehicles));
+    } else {
+      const savedVehicles = localStorage.getItem('tor_custom_vehicles');
+      if (savedVehicles) {
+        try {
+          const parsedV = JSON.parse(savedVehicles);
+          if (Array.isArray(parsedV) && parsedV.length > 0) {
+            setVehicles(parsedV);
+          } else {
+            await loadSpreadsheetVehicles();
+          }
+        } catch (e) {
           await loadSpreadsheetVehicles();
         }
-      } catch (e) {
+      } else {
         await loadSpreadsheetVehicles();
       }
-    } else {
-      await loadSpreadsheetVehicles();
     }
 
-    // Verificar se há equipes customizadas salvas no localStorage
-    const savedTeams = localStorage.getItem('tor_custom_teams');
-    if (savedTeams) {
-      try {
-        const parsedT = JSON.parse(savedTeams);
-        if (Array.isArray(parsedT) && parsedT.length > 0) {
-          setTeams(parsedT);
-        } else {
+    // 2. Equipes: Nuvem -> LocalStorage -> Planilha CSV
+    if (cloudData?.teams && cloudData.teams.length > 0) {
+      setTeams(cloudData.teams);
+      localStorage.setItem('tor_custom_teams', JSON.stringify(cloudData.teams));
+    } else {
+      const savedTeams = localStorage.getItem('tor_custom_teams');
+      if (savedTeams) {
+        try {
+          const parsedT = JSON.parse(savedTeams);
+          if (Array.isArray(parsedT) && parsedT.length > 0) {
+            setTeams(parsedT);
+          } else {
+            await loadSpreadsheetTeams();
+          }
+        } catch (e) {
           await loadSpreadsheetTeams();
         }
-      } catch (e) {
+      } else {
         await loadSpreadsheetTeams();
       }
-    } else {
-      await loadSpreadsheetTeams();
     }
 
     setLoading(false);
@@ -383,12 +381,14 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
     setTeamFormMembers(updated);
   };
 
-  const handleSaveTeam = (e: React.FormEvent) => {
+  const handleSaveTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamFormName.trim()) {
       alert('Informe o nome da equipe.');
       return;
     }
+
+    setIsSavingTeam(true);
 
     let updatedTeams: Team[];
 
@@ -417,15 +417,20 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
     }
 
     setTeams(updatedTeams);
-    localStorage.setItem('tor_custom_teams', JSON.stringify(updatedTeams));
+    const syncRes = await cloudSyncService.saveTeams(updatedTeams);
+    showToast(syncRes.message, syncRes.success ? 'success' : 'error');
+    setIsSavingTeam(false);
     setIsTeamModalOpen(false);
   };
 
-  const handleDeleteTeam = (teamId: string) => {
+  const handleDeleteTeam = async (teamId: string) => {
     if (confirm('Tem certeza que deseja remover esta equipe?')) {
+      setIsSavingTeam(true);
       const updated = teams.filter(t => t.id !== teamId);
       setTeams(updated);
-      localStorage.setItem('tor_custom_teams', JSON.stringify(updated));
+      const syncRes = await cloudSyncService.saveTeams(updated);
+      showToast('Equipe removida com sucesso!', syncRes.success ? 'success' : 'error');
+      setIsSavingTeam(false);
       setIsTeamModalOpen(false);
     }
   };
@@ -458,12 +463,14 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
     setIsVehicleModalOpen(true);
   };
 
-  const handleSaveVehicle = (e: React.FormEvent) => {
+  const handleSaveVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vehicleFormId.trim()) {
       alert('Informe a identificação da viatura.');
       return;
     }
+
+    setIsSavingVehicle(true);
 
     let updatedVehicles: Vehicle[];
 
@@ -501,15 +508,20 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
     }
 
     setVehicles(updatedVehicles);
-    localStorage.setItem('tor_custom_vehicles', JSON.stringify(updatedVehicles));
+    const syncRes = await cloudSyncService.saveVehicles(updatedVehicles);
+    showToast(syncRes.message, syncRes.success ? 'success' : 'error');
+    setIsSavingVehicle(false);
     setIsVehicleModalOpen(false);
   };
 
-  const handleDeleteVehicle = (vId: string) => {
+  const handleDeleteVehicle = async (vId: string) => {
     if (confirm('Tem certeza que deseja remover esta viatura do painel?')) {
+      setIsSavingVehicle(true);
       const updated = vehicles.filter(v => v.id !== vId);
       setVehicles(updated);
-      localStorage.setItem('tor_custom_vehicles', JSON.stringify(updated));
+      const syncRes = await cloudSyncService.saveVehicles(updated);
+      showToast('Viatura removida com sucesso!', syncRes.success ? 'success' : 'error');
+      setIsSavingVehicle(false);
       setIsVehicleModalOpen(false);
     }
   };
@@ -543,6 +555,36 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
           animation: flash-red 0.8s ease-in-out infinite;
         }
       `}</style>
+
+      {/* Toast Flutuante de Confirmação de Salvamento */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-[9999] animate-in slide-in-from-top-4 duration-300 max-w-sm w-full pointer-events-auto">
+          <div className={`p-4 rounded-2xl shadow-2xl flex items-center gap-3.5 text-white ${
+            toastMessage.type === 'success' ? 'bg-emerald-600 shadow-emerald-600/30' : 'bg-red-600 shadow-red-600/30'
+          }`}>
+            <div className="size-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-2xl">
+                {toastMessage.type === 'success' ? 'check_circle' : 'error'}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-black uppercase tracking-wider">
+                {toastMessage.type === 'success' ? 'Salvo com Sucesso!' : 'Atenção'}
+              </p>
+              <p className="text-[11px] text-white/95 font-medium leading-snug break-words">
+                {toastMessage.text}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastMessage(null)}
+              className="size-7 rounded-lg hover:bg-white/20 flex items-center justify-center text-white/80 hover:text-white transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Banner de Modo de Edição Ativo para o Gestor */}
       {isLoggedIn && (
@@ -908,9 +950,20 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-md shadow-emerald-600/20"
+                  disabled={isSavingTeam}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                 >
-                  Salvar Guarnição
+                  {isSavingTeam ? (
+                    <>
+                      <div className="size-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-sm">save</span>
+                      <span>Salvar Guarnição</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1046,9 +1099,20 @@ const OperationalView: React.FC<{ isLoggedIn: boolean }> = ({ isLoggedIn }) => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-md shadow-emerald-600/20"
+                  disabled={isSavingVehicle}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                 >
-                  Salvar Viatura
+                  {isSavingVehicle ? (
+                    <>
+                      <div className="size-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-sm">save</span>
+                      <span>Salvar Viatura</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

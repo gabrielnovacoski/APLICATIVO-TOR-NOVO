@@ -55,3 +55,32 @@ export interface PersonnelAbsence {
     graduation: string;
   };
 }
+
+export interface Member {
+  name: string;
+  role: string;
+  icon: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  sector: string;
+  status: string;
+  color: string;
+  members: Member[];
+}
+
+export interface Vehicle {
+  id: string;
+  prefix: string;
+  status: 'OPERANDO' | 'BAIXADA';
+  model: string;
+  year: string;
+  plate: string;
+  odometer: number;
+  oilInterval: number;
+  lastOilChangeOdometer: number;
+  color: string;
+}
+

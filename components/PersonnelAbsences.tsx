@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PersonnelAbsence } from '../types';
 import { fetchPersonnel, fetchPersonnelAbsences } from '../services/sheetsService';
+import { cloudSyncService } from '../services/cloudSyncService';
 
 interface PersonnelAbsencesProps {
     isLoggedIn: boolean;
@@ -44,13 +45,44 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
     const [formEndDate, setFormEndDate] = useState('');
     const [formDescription, setFormDescription] = useState('');
 
+    // Estados de Salvamento e Notificações (Feedback ao Gestor)
+    const [isSaving, setIsSaving] = useState(false);
+    const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+        setToastMessage({ text, type });
+        setTimeout(() => {
+            setToastMessage(prev => prev && prev.text === text ? null : prev);
+        }, 4500);
+    };
+
     const fetchData = async () => {
         setLoading(true);
 
         const pData = await fetchPersonnel();
         setPersonnelList(pData);
 
-        // Verificar se há dados personalizados salvos no localStorage
+        // 1. Tentar buscar dados da Nuvem (Google Apps Script)
+        const cloudData = await cloudSyncService.fetchCloudData();
+        if (cloudData?.absences && cloudData.absences.length > 0) {
+            const joinedCloud = cloudData.absences.map(absence => {
+                const person = pData.find(p => p.id === absence.personnel_id || p.name === absence.personnel_id);
+                return {
+                    ...absence,
+                    personnel: person ? {
+                        name: person.name,
+                        graduation: person.graduation
+                    } : { name: absence.personnel?.name || absence.personnel_id || 'Policial', graduation: absence.personnel?.graduation || '' }
+                };
+            });
+            joinedCloud.sort((a, b) => parseDateString(a.start_date).getTime() - parseDateString(b.start_date).getTime());
+            setAbsences(joinedCloud);
+            localStorage.setItem('tor_custom_absences', JSON.stringify(joinedCloud));
+            setLoading(false);
+            return;
+        }
+
+        // 2. Verificar se há dados personalizados salvos no localStorage
         const savedCustom = localStorage.getItem('tor_custom_absences');
         if (savedCustom) {
             try {
@@ -124,12 +156,14 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
         setIsModalOpen(true);
     };
 
-    const handleSaveAbsence = (e: React.FormEvent) => {
+    const handleSaveAbsence = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formPersonnelName.trim()) {
             alert('Por favor, informe o policial.');
             return;
         }
+
+        setIsSaving(true);
 
         let updated: PersonnelAbsence[];
 
@@ -169,14 +203,21 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
         }
 
         updated.sort((a, b) => parseDateString(a.start_date).getTime() - parseDateString(b.start_date).getTime());
-        saveAbsencesToStorage(updated);
+        setAbsences(updated);
+        const syncRes = await cloudSyncService.saveAbsences(updated);
+        showToast(syncRes.message, syncRes.success ? 'success' : 'error');
+        setIsSaving(false);
         setIsModalOpen(false);
     };
 
-    const handleDeleteAbsence = (id: string) => {
+    const handleDeleteAbsence = async (id: string) => {
         if (confirm('Tem certeza que deseja remover este registro de afastamento?')) {
+            setIsSaving(true);
             const updated = absences.filter(a => a.id !== id);
-            saveAbsencesToStorage(updated);
+            setAbsences(updated);
+            const syncRes = await cloudSyncService.saveAbsences(updated);
+            showToast('Afastamento removido com sucesso!', syncRes.success ? 'success' : 'error');
+            setIsSaving(false);
         }
     };
 
@@ -238,7 +279,36 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
     }
 
     return (
-        <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden mb-8">
+        <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden mb-8 relative">
+            {/* Toast Flutuante de Confirmação de Salvamento */}
+            {toastMessage && (
+                <div className="fixed top-6 right-6 z-[9999] animate-in slide-in-from-top-4 duration-300 max-w-sm w-full pointer-events-auto">
+                    <div className={`p-4 rounded-2xl shadow-2xl flex items-center gap-3.5 text-white ${
+                        toastMessage.type === 'success' ? 'bg-emerald-600 shadow-emerald-600/30' : 'bg-red-600 shadow-red-600/30'
+                    }`}>
+                        <div className="size-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-2xl">
+                                {toastMessage.type === 'success' ? 'check_circle' : 'error'}
+                            </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-black uppercase tracking-wider">
+                                {toastMessage.type === 'success' ? 'Salvo com Sucesso!' : 'Atenção'}
+                            </p>
+                            <p className="text-[11px] text-white/95 font-medium leading-snug break-words">
+                                {toastMessage.text}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setToastMessage(null)}
+                            className="size-7 rounded-lg hover:bg-white/20 flex items-center justify-center text-white/80 hover:text-white transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-sm">close</span>
+                        </button>
+                    </div>
+                </div>
+            )}
             <div className="px-8 py-6 border-b border-slate-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50/50">
                 <div className="flex items-center gap-4">
                     <div className="size-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shadow-inner">
@@ -555,9 +625,20 @@ const PersonnelAbsences: React.FC<PersonnelAbsencesProps> = ({ isLoggedIn }) => 
                                 </button>
                                 <button
                                     type="submit"
-                                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-md shadow-emerald-600/20"
+                                    disabled={isSaving}
+                                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                                 >
-                                    Salvar Dados
+                                    {isSaving ? (
+                                        <>
+                                            <div className="size-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                            <span>Salvando...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-sm">save</span>
+                                            <span>Salvar Afastamento</span>
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </form>

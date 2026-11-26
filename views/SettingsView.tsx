@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { UserProfile } from '../types';
 import { fetchPersonnel } from '../services/sheetsService';
+import { cloudSyncService } from '../services/cloudSyncService';
 
 interface Personnel {
   id: string;
@@ -10,9 +11,15 @@ interface Personnel {
 
 const SettingsView: React.FC<{ isLoggedIn: boolean; userProfile: UserProfile | null }> = ({ isLoggedIn, userProfile }) => {
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'system'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'sync' | 'system'>('profile');
   const [loading, setLoading] = useState(true);
   const [personnelList, setPersonnelList] = useState<Personnel[]>([]);
+
+  // Estados de Sincronização em Nuvem
+  const [scriptUrl, setScriptUrl] = useState(() => cloudSyncService.getSyncUrl());
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
     const loadPersonnel = async () => {
@@ -23,6 +30,21 @@ const SettingsView: React.FC<{ isLoggedIn: boolean; userProfile: UserProfile | n
     };
     loadPersonnel();
   }, []);
+
+  const handleSaveUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    cloudSyncService.setSyncUrl(scriptUrl);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3500);
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    const result = await cloudSyncService.testConnection(scriptUrl);
+    setTestResult(result);
+    setIsTesting(false);
+  };
 
   const getRankIcon = (graduation: string) => {
     const g = graduation.toUpperCase();
@@ -42,6 +64,7 @@ const SettingsView: React.FC<{ isLoggedIn: boolean; userProfile: UserProfile | n
         <div className="w-full md:w-64 shrink-0 space-y-2">
           {[
             { id: 'profile', label: 'Efetivo (Leitura)', icon: 'badge' },
+            { id: 'sync', label: 'Sincronização Nuvem', icon: 'cloud_sync' },
             { id: 'system', label: 'Preferências do Sistema', icon: 'settings_suggest' },
           ].map((tab) => (
             <button
@@ -107,6 +130,154 @@ const SettingsView: React.FC<{ isLoggedIn: boolean; userProfile: UserProfile | n
                   )}
                 </div>
 
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'sync' && (
+            <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-300">
+              <div className="p-8 border-b border-slate-50 flex items-center gap-4">
+                <div className="size-12 rounded-2xl bg-tor-blue/10 text-tor-blue flex items-center justify-center">
+                  <span className="material-symbols-outlined text-2xl">cloud_sync</span>
+                </div>
+                <div>
+                  <h3 className="text-slate-900 text-lg font-bold uppercase tracking-wider">Sincronização em Nuvem (Google Sheets)</h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                    Mantenha equipes, viaturas e afastamentos sincronizados entre celular e computadores
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-8 space-y-6">
+                {/* Status da Sincronização */}
+                <div className={`p-5 rounded-2xl border flex items-start gap-4 ${
+                  scriptUrl
+                    ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50/60 border-amber-200 text-amber-900'
+                }`}>
+                  <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    scriptUrl ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
+                  }`}>
+                    <span className="material-symbols-outlined text-xl">
+                      {scriptUrl ? 'cloud_done' : 'cloud_off'}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`size-2.5 rounded-full ${scriptUrl ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                      <h4 className="text-xs font-black uppercase tracking-wider">
+                        {scriptUrl ? 'Sincronização em Nuvem Ativa' : 'Modo Apenas Local (Sem Sincronização)'}
+                      </h4>
+                    </div>
+                    <p className="text-xs mt-1 leading-relaxed opacity-90">
+                      {scriptUrl
+                        ? 'Todas as alterações que você fizer no modo Gestor são enviadas em tempo real para a sua Planilha do Google e aparecem em todos os celulares e computadores.'
+                        : 'Atualmente as alterações feitas no modo Gestor são salvas somente no navegador deste computador. Configure a URL do Google Apps Script abaixo para sincronizar entre todos os aparelhos.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Formulário da URL */}
+                <form onSubmit={handleSaveUrl} className="space-y-4 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
+                      <span>URL do Webhook (Google Apps Script)</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={scriptUrl}
+                      onChange={e => setScriptUrl(e.target.value)}
+                      placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:border-tor-blue focus:ring-0 shadow-sm"
+                    />
+                    <p className="text-[10px] text-slate-400">
+                      Cole aqui a URL gerada na implantação do App da Web no Google Sheets (arquivo <code>google-apps-script.js</code>).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-tor-dark hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-2 active:scale-95"
+                    >
+                      <span className="material-symbols-outlined text-sm">save</span>
+                      <span>Salvar URL</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={isTesting || !scriptUrl}
+                      className="px-5 py-2.5 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 disabled:opacity-50 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-2 active:scale-95"
+                    >
+                      {isTesting ? (
+                        <>
+                          <div className="size-3.5 border-2 border-tor-blue border-t-transparent rounded-full animate-spin"></div>
+                          <span>Testando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-sm text-tor-blue">wifi_protected_setup</span>
+                          <span>Testar Conexão</span>
+                        </>
+                      )}
+                    </button>
+
+                    {scriptUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScriptUrl('');
+                          cloudSyncService.setSyncUrl('');
+                          setTestResult(null);
+                        }}
+                        className="text-red-500 hover:text-red-700 text-xs font-bold uppercase tracking-wider px-3 py-2 transition-colors ml-auto"
+                      >
+                        Remover URL
+                      </button>
+                    )}
+                  </div>
+
+                  {saveSuccess && (
+                    <div className="p-3 bg-emerald-100/70 border border-emerald-300 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                      <span className="material-symbols-outlined text-base">check_circle</span>
+                      <span>URL salva com sucesso neste navegador!</span>
+                    </div>
+                  )}
+
+                  {testResult && (
+                    <div className={`p-4 rounded-xl border text-xs font-bold flex items-center gap-3 animate-in fade-in ${
+                      testResult.success
+                        ? 'bg-emerald-100/70 border-emerald-300 text-emerald-800'
+                        : 'bg-red-100/70 border-red-300 text-red-800'
+                    }`}>
+                      <span className="material-symbols-outlined text-lg shrink-0">
+                        {testResult.success ? 'check_circle' : 'error'}
+                      </span>
+                      <span>{testResult.message}</span>
+                    </div>
+                  )}
+                </form>
+
+                {/* Passo a passo de ativação */}
+                <div className="p-6 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-4">
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <span className="material-symbols-outlined text-tor-blue text-base">menu_book</span>
+                    <span>Como obter a URL do Google Apps Script (Passo a Passo)</span>
+                  </h4>
+
+                  <ol className="text-xs text-slate-600 space-y-2.5 list-decimal list-inside leading-relaxed">
+                    <li>Abra a sua planilha do Google Sheets no computador.</li>
+                    <li>No menu superior, vá em <strong>Extensões &gt; Apps Script</strong>.</li>
+                    <li>Copie todo o conteúdo do arquivo <strong><code>google-apps-script.js</code></strong> e cole no editor substituindo o código existente.</li>
+                    <li>Clique no ícone de disquete (<strong>Salvar</strong>).</li>
+                    <li>No canto superior direito, clique em <strong>Implantar &gt; Nova implantação</strong>.</li>
+                    <li>Ao lado de <em>Selecione o tipo</em> (engrenagem), selecione <strong>App da Web</strong>.</li>
+                    <li>Defina: <em>Executar como:</em> <strong>Eu</strong> e <em>Quem pode acessar:</em> <strong>Qualquer pessoa (Anyone)</strong>.</li>
+                    <li>Clique em <strong>Implantar</strong>, autorize as permissões da sua conta e copie a <strong>URL do app da Web</strong> terminada em <code>/exec</code>.</li>
+                    <li>Cole a URL no campo acima e clique em <strong>Salvar URL</strong>!</li>
+                  </ol>
+                </div>
               </div>
             </div>
           )}
